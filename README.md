@@ -1,3 +1,5 @@
+**English** | [فارسی](README.fa.md)
+
 # ont-english-proxy
 
 **Use your Huawei fiber modem (GPON ONT) web interface in English, even with China-region firmware.**
@@ -205,7 +207,7 @@ Translations, fixes and reports for other models are very welcome.
 # 1. Fork on GitHub, then:
 git clone https://github.com/<your-username>/ont-english-proxy.git
 cd ont-english-proxy
-git config core.hooksPath .githooks        # enables the privacy check before every commit
+git config core.hooksPath .githooks        # enables the privacy hooks (see below)
 
 # 2. Make a branch and your change
 git checkout -b add-translations
@@ -234,8 +236,36 @@ Ground rules (full version in [AGENTS.md](AGENTS.md), which AI coding assistants
 - Python standard library only; must keep working on macOS, Linux and Windows.
 - The proxy must never change modem settings by itself.
 
-Tip: git publishes the email in your commits. To keep yours private, use your GitHub noreply address:
-`git config user.email <id>+<username>@users.noreply.github.com`
+**Privacy hooks** (enabled by `git config core.hooksPath .githooks`):
+
+| Hook | What it does |
+|---|---|
+| `pre-commit` | Blocks commits containing serials, MAC/IP addresses, emails, personal paths, cookies or Huawei files |
+| `post-commit` | Rewrites each new commit's timestamps to UTC: git normally records your timezone, which reveals your region |
+| `pre-push` | Blocks pushing any commit that still has a non-UTC timestamp (e.g. after a rebase) |
+
+### Timezone protection: read this before pushing
+
+Every git commit normally records your **local timezone** (e.g. `+0330`), which reveals the region you
+live in. This repository **only accepts UTC timestamps** (`+0000`):
+
+- With the hooks enabled, normal commits are converted to UTC automatically. Nothing to do.
+- If a push is **blocked** ("these commits contain your local timezone"), typically after a rebase,
+  cherry-pick or a commit made without hooks, fix the commits and push again:
+
+  | Shell | Command |
+  |---|---|
+  | macOS / Linux / Git Bash | `TZ=UTC0 git rebase --ignore-date origin/main` |
+  | Windows PowerShell | `$env:TZ='UTC0'; git rebase --ignore-date origin/main; Remove-Item Env:TZ` |
+  | Windows cmd | `set TZ=UTC0 && git rebase --ignore-date origin/main && set TZ=` |
+
+  Then `git push` as usual.
+- Committing without the hooks? Prefix the command yourself: `TZ=UTC0 git commit -m "…"`
+
+Pull requests with non-UTC commits will be asked to fix them this way.
+
+Git also publishes the name and email in your commits. To keep your email private, use your GitHub
+noreply address: `git config user.email <id>+<username>@users.noreply.github.com`
 (find it under GitHub → Settings → Emails).
 
 ## 13. Privacy and security

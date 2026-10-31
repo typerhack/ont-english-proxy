@@ -1,0 +1,12 @@
+#!/bin/sh
+# Rewrite the commit just made so its timestamps are UTC (+0000).
+# Commits record your local timezone offset, which can reveal where you live.
+# Enable all hooks with: git config core.hooksPath .githooks
+gitdir=$(git rev-parse --git-dir) || exit 0
+# Never rewrite in the middle of a rebase / cherry-pick / merge / revert.
+for f in rebase-merge rebase-apply CHERRY_PICK_HEAD MERGE_HEAD REVERT_HEAD; do
+  [ -e "$gitdir/$f" ] && exit 0
+done
+set -- $(git log -1 --format='%ad %cd' --date=raw)   # -> author_ts author_tz committer_ts committer_tz
+[ "$2" = "+0000" ] && [ "$4" = "+0000" ] && exit 0      # already UTC (also stops the amend from looping)
+GIT_COMMITTER_DATE="$3 +0000" git commit --amend --no-edit --no-verify --allow-empty --quiet --date="$1 +0000"

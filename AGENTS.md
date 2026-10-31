@@ -16,6 +16,8 @@ requests to the modem (default `192.168.100.1`) and rewrites only what the brows
 | `tests/test_proxy.py` | Offline unit tests with synthetic data, no modem needed |
 | `tools/privacy_check.py` | Blocks commits that contain personal or device-identifying data |
 | `.githooks/pre-commit` | Runs the privacy check before every commit |
+| `.githooks/post-commit` | Rewrites new commits' timestamps to UTC (timezone reveals the author's region) |
+| `.githooks/pre-push` | Blocks pushing commits with non-UTC timestamps |
 
 ## RULE 1: Privacy (strict, no exceptions)
 
@@ -39,6 +41,10 @@ Never commit:
 When you need example data, **invent it** (e.g. `HWTC00000000`, `00:00:00:00:00:00`, `192.0.2.10` from the
 documentation range). A model name and firmware version (e.g. `EG8145X6`, `V5R020C00S080`) are fine:
 thousands of identical units share them. They are not personal.
+
+Commit timestamps must be UTC (`+0000`): the post-commit and pre-push hooks enforce this. If you commit
+without the hooks, use `TZ=UTC0 git commit …`. If a push is blocked, fix with `TZ=UTC0 git rebase --ignore-date origin/main`
+(Windows variants in README, "Timezone protection").
 
 Before every commit, run:
 

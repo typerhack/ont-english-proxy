@@ -1,0 +1,19 @@
+#!/bin/sh
+# Block pushing commits whose timestamps are not UTC: they reveal your local timezone.
+# (post-commit fixes normal commits; this also catches rebases, cherry-picks and merges.)
+bad=""
+while read -r lref lsha rref rsha; do
+  case "$lsha" in *[!0]*) ;; *) continue ;; esac                  # branch deletion: nothing to check
+  case "$rsha" in *[!0]*) range="$rsha..$lsha" ;; *) range="$lsha --not --remotes" ;; esac
+  found=$(git log --format='%h %ad %cd' --date=raw $range | awk '$3 != "+0000" || $5 != "+0000" { printf " %s", $1 }')
+  bad="$bad$found"
+done
+if [ -n "$bad" ]; then
+  echo "push blocked: these commits contain your local timezone:$bad" >&2
+  echo "fix, then push again (see README, 'Timezone protection'):" >&2
+  echo "  macOS/Linux/Git Bash:  TZ=UTC0 git rebase --ignore-date origin/main" >&2
+  echo "  Windows PowerShell:    \$env:TZ='UTC0'; git rebase --ignore-date origin/main; Remove-Item Env:TZ" >&2
+  echo "  Windows cmd:           set TZ=UTC0 && git rebase --ignore-date origin/main && set TZ=" >&2
+  exit 1
+fi
+exit 0
