@@ -7,6 +7,7 @@ A small reverse proxy on localhost. Standard library only, no dependencies.
     python3 ont_english_proxy.py --open     # foreground, Ctrl+C stops; http://127.0.0.1:8181
     python3 ont_english_proxy.py start      # background (opens the browser)
     python3 ont_english_proxy.py status
+    python3 ont_english_proxy.py logs -f    # follow the background log (start -v for more detail)
     python3 ont_english_proxy.py stop
     python3 ont_english_proxy.py --port 9000 --upstream 192.168.100.1
 
@@ -257,11 +258,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     do_GET = do_POST = do_HEAD = do_PUT = do_DELETE = do_OPTIONS = _handle
 
     def log_message(self, fmt, *args):
+        if self.path == STATUS_PATH:
+            return  # internal status/stop checks: not worth logging
         # Never log query strings / cookies (they can carry tokens).
         line = fmt % args
         if not Config.verbose:
             line = re.sub(r"\?[^ ]*", "?…", line)
-        sys.stderr.write(f"[ont-english-proxy] {line}\n")
+        sys.stderr.write(f"[ont-english-proxy] {time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
 
 
 def rewrite_path_in_url(url: str) -> str:
@@ -353,7 +356,24 @@ def _open_browser(url):
     webbrowser.open(url)
 
 
+def link(url):
+    """Terminal hyperlink (Cmd/Ctrl+click opens it). Plain text when not a terminal or unsupported."""
+    if not sys.stdout.isatty() or os.environ.get("TERM") == "dumb" or os.environ.get("NO_COLOR"):
+        return url
+    if os.name == "nt" and not os.environ.get("WT_SESSION"):
+        return url  # legacy Windows console: no OSC 8 support (URL stays plain, still selectable)
+    return f"\033]8;;{url}\033\\{url}\033]8;;\033\\"
+
+
 def cmd_run(a):
+    running = find_running(a)
+    if running:
+        print(f"ont-english-proxy is already running in the background: {link(running['url'])}")
+        print("  stop it first to run in the foreground:  stop")
+        if a.open:
+            _open_browser(running["url"])
+        return 0
+
     host, _, port = a.upstream.partition(":")
     Config.upstream_host, Config.upstream_port = host, int(port or 80)
     Config.translations_path = a.translations
@@ -370,25 +390,38 @@ def cmd_run(a):
     url = f"http://{_local_host(a.listen)}:{a.port}"
     write_state({"pid": os.getpid(), "host": _local_host(a.listen), "port": a.port, "url": url,
                  "upstream": a.upstream, "log": log_path(), "started": int(time.time())})
-    print(f"[ont-english-proxy] {url}  ->  http://{a.upstream}   (Ctrl+C to stop)")
+    print(f"[ont-english-proxy] {link(url)}  ->  http://{a.upstream}   (Ctrl+C to stop)")
     if a.open:
         _open_browser(url)
 
-    if hasattr(signal, "SIGTERM"):
-        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # `stop` -> clean exit, state removed
+    def stamp():
+        return time.strftime("%Y-%m-%d %H:%M:%S")
+
+    def on_signal(signum, _frame):
+        print(f"[ont-english-proxy] {stamp()} received signal {signum}, shutting down", file=sys.stderr)
+        sys.exit(0)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), on_signal)  # `stop` -> clean exit, state removed
+    print(f"[ont-english-proxy] {stamp()} started (pid {os.getpid()})", file=sys.stderr)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        pass
+        print(f"[ont-english-proxy] {stamp()} stopped with Ctrl+C", file=sys.stderr)
+    except Exception as e:  # pragma: no cover - unexpected crash: leave a trace in the log
+        print(f"[ont-english-proxy] {stamp()} crashed: {e!r}", file=sys.stderr)
+        raise
     finally:
         remove_state(only_pid=os.getpid())
+        print(f"[ont-english-proxy] {stamp()} exited", file=sys.stderr)
     return 0
 
 
 def cmd_start(a):
     running = find_running(a)
     if running:
-        print(f"ont-english-proxy is already running: {running['url']}  (pid {running['pid']})")
+        print(f"ont-english-proxy is already running: {link(running['url'])}  (pid {running['pid']})")
         if not a.no_open:
             _open_browser(running["url"])
         return 0
@@ -413,8 +446,8 @@ def cmd_start(a):
         info = probe(host, a.port, timeout=0.5)
         if info and info.get("pid") == child.pid:
             url = f"http://{host}:{a.port}"
-            print(f"ont-english-proxy started: {url}  ->  http://{a.upstream}")
-            print(f"  commands: status | stop      log: {log_path()}")
+            print(f"ont-english-proxy started: {link(url)}  ->  http://{a.upstream}")
+            print(f"  commands: status | logs | stop      log: {log_path()}")
             if not a.no_open:
                 _open_browser(url)
             return 0
@@ -463,8 +496,8 @@ def cmd_status(a):
     if not running:
         print("ont-english-proxy is not running")
         return 1
-    print(f"ont-english-proxy is running")
-    print(f"  url:      {running['url']}")
+    print("ont-english-proxy is running")
+    print(f"  url:      {link(running['url'])}")
     print(f"  modem:    {running.get('upstream')}")
     print(f"  pid:      {running['pid']}")
     if running.get("started"):
@@ -474,11 +507,38 @@ def cmd_status(a):
     return 0
 
 
+def cmd_logs(a):
+    path = log_path()
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        print("no logs yet. Logs are written while running in the background (start);")
+        print("in the foreground (run) they print straight to the terminal.")
+        return 0
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f.readlines()[-a.lines:]:
+            print(line.rstrip("\n"))
+        if not a.follow:
+            return 0
+        print(f"--- following {path} (Ctrl+C to stop) ---")
+        try:
+            while True:
+                pos = f.tell()
+                line = f.readline()
+                if line:
+                    print(line.rstrip("\n"))
+                    continue
+                if os.path.getsize(path) < pos:  # log was rotated by a new start
+                    f.seek(0)
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Serve a Huawei ONT web UI in English (local reverse proxy).",
-        epilog="commands: run (default, foreground; Ctrl+C stops) | start (background) | stop | status")
-    ap.add_argument("command", nargs="?", default="run", choices=["run", "start", "stop", "status"],
+        epilog="commands: run (default, foreground; Ctrl+C stops) | start (background) | stop | status | logs")
+    ap.add_argument("command", nargs="?", default="run", choices=["run", "start", "stop", "status", "logs"],
                     help="what to do (default: run in the foreground)")
     ap.add_argument("--listen", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
     ap.add_argument("--port", type=int, default=8181, help="port to listen on (default 8181)")
@@ -487,6 +547,8 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true", help="log full request lines")
     ap.add_argument("--open", action="store_true", help="run: open the proxied UI in the default browser")
     ap.add_argument("--no-open", action="store_true", help="start: don't open the browser")
+    ap.add_argument("-n", "--lines", type=int, default=50, help="logs: how many recent lines to show (default 50)")
+    ap.add_argument("-f", "--follow", action="store_true", help="logs: keep showing new lines (Ctrl+C to stop)")
     a = ap.parse_args()
     a.translations = os.path.abspath(a.translations)
 
@@ -497,7 +559,8 @@ def main():
         except (AttributeError, ValueError):
             pass
 
-    return {"run": cmd_run, "start": cmd_start, "stop": cmd_stop, "status": cmd_status}[a.command](a)
+    return {"run": cmd_run, "start": cmd_start, "stop": cmd_stop, "status": cmd_status,
+            "logs": cmd_logs}[a.command](a)
 
 
 if __name__ == "__main__":

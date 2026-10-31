@@ -122,6 +122,9 @@ On the GitHub page click **Code → Download ZIP**, unzip it, and open a termina
 | `python3 ont_english_proxy.py start` | Starts in the background and opens the browser (add `--no-open` to skip) |
 | `python3 ont_english_proxy.py status` | Shows whether it's running, its address and log file |
 | `python3 ont_english_proxy.py stop` | Stops it |
+| `python3 ont_english_proxy.py logs` | Shows the latest log lines (`-f` to follow live, `-n 200` for more) |
+
+For debugging, start with extra detail: `start -v`, then watch with `logs -f`.
 
 On Windows use `py` instead of `python3`. Running `start` twice is safe; it won't start a second copy.
 The background log is in `~/.ont-english-proxy/proxy.log`.
@@ -141,6 +144,7 @@ Open a new terminal, then from any folder:
 ```
 ont-en start      # background + browser
 ont-en status
+ont-en logs -f    # watch the log live (Ctrl+C stops watching, not the proxy)
 ont-en stop
 ont-en --open     # foreground instead; Ctrl+C stops
 ```
@@ -161,10 +165,11 @@ Then use the modem directly again at `http://192.168.100.1` if you like.
 ## 7. Options
 
 ```
-python3 ont_english_proxy.py [run|start|stop|status] [options]
+python3 ont_english_proxy.py [run|start|stop|status|logs] [options]
 
 run                  foreground (default); Ctrl+C stops
 start | stop | status  background control
+logs                 show the background log
 
 --port 8181          local port (pick another if 8181 is taken, e.g. --port 9000)
 --upstream HOST[:P]  modem address (default 192.168.100.1)
@@ -172,6 +177,8 @@ start | stop | status  background control
 --translations FILE  use a different translations file
 --open               run: open the browser automatically
 --no-open            start: don't open the browser
+-n, --lines N        logs: how many recent lines (default 50)
+-f, --follow         logs: keep showing new lines
 -v, --verbose        log full request lines (may include tokens in URLs; don't share these logs)
 ```
 
@@ -184,6 +191,7 @@ Example for a modem at a different address: `python3 ont_english_proxy.py --upst
 | `cannot listen on 127.0.0.1:8181 … already in use` | It's already running: check with `status`, stop with `stop`. Or use `--port 9000` |
 | `modem unreachable` in the browser | Check that `http://192.168.100.1` opens directly; use `--upstream` if your modem has another address |
 | Login page loads, but login fails or bounces back | Log out of the modem in every other tab/device, wait a minute, try again (one admin session only) |
+| Something doesn't work and you want to see why | `logs` shows recent requests and errors; restart with `start -v` for full detail |
 | Still some Chinese text | Normal for a few rare labels. See [Fixing remaining Chinese text](#9-fixing-remaining-chinese-text) |
 | Page looks unchanged after editing translations | Reload the page (Cmd+Shift+R / Ctrl+F5) |
 | `python3: command not found` (Windows) | Use `py` instead of `python3` |

@@ -121,6 +121,9 @@ cd ont-english-proxy
 | `python3 ont_english_proxy.py start` | برنامه را در پس‌زمینه اجرا می‌کند و مرورگر را باز می‌کند (برای باز نشدن مرورگر: `--no-open`) |
 | `python3 ont_english_proxy.py status` | نشان می‌دهد برنامه در حال اجراست یا نه، و آدرس و فایل لاگ آن |
 | `python3 ont_english_proxy.py stop` | برنامه را متوقف می‌کند |
+| `python3 ont_english_proxy.py logs` | آخرین خطوط لاگ را نشان می‌دهد (`-f` برای دنبال کردن زنده، `-n 200` برای خطوط بیشتر) |
+
+برای عیب‌یابی، برنامه را با جزئیات بیشتر اجرا کنید (`start -v`) و لاگ را با `logs -f` دنبال کنید.
 
 در ویندوز به جای `python3` از `py` استفاده کنید. اجرای دوبارهٔ `start` مشکلی ایجاد نمی‌کند و نسخهٔ دوم اجرا نمی‌شود.
 لاگ حالت پس‌زمینه در `~/.ont-english-proxy/proxy.log` ذخیره می‌شود.
@@ -142,6 +145,7 @@ cd ont-english-proxy
 ```
 ont-en start      # background + browser
 ont-en status
+ont-en logs -f    # watch the log live (Ctrl+C stops watching, not the proxy)
 ont-en stop
 ont-en --open     # foreground instead; Ctrl+C stops
 ```
@@ -165,10 +169,11 @@ ont-en --open     # foreground instead; Ctrl+C stops
 </div>
 
 ```
-python3 ont_english_proxy.py [run|start|stop|status] [options]
+python3 ont_english_proxy.py [run|start|stop|status|logs] [options]
 
 run                  foreground (default); Ctrl+C stops
 start | stop | status  background control
+logs                 show the background log
 
 --port 8181          local port (e.g. --port 9000 if 8181 is busy)
 --upstream HOST[:P]  modem address (default 192.168.100.1)
@@ -176,6 +181,8 @@ start | stop | status  background control
 --translations FILE  use a different translations file
 --open               run: open the browser automatically
 --no-open            start: don't open the browser
+-n, --lines N        logs: how many recent lines (default 50)
+-f, --follow         logs: keep showing new lines
 -v, --verbose        log full request lines (don't share these logs)
 ```
 
@@ -190,6 +197,7 @@ start | stop | status  background control
 | خطای `cannot listen on 127.0.0.1:8181 … already in use` | برنامه از قبل در حال اجراست: با `status` بررسی و با `stop` متوقف کنید، یا از `--port 9000` استفاده کنید |
 | پیام `modem unreachable` در مرورگر | بررسی کنید `http://192.168.100.1` مستقیم باز می‌شود؛ اگر آدرس مودم فرق دارد از `--upstream` استفاده کنید |
 | صفحهٔ ورود باز می‌شود ولی ورود انجام نمی‌شود | از مودم در همهٔ تب‌ها و دستگاه‌های دیگر خارج شوید، یک دقیقه صبر کنید و دوباره امتحان کنید |
+| چیزی کار نمی‌کند و می‌خواهید علتش را ببینید | دستور `logs` درخواست‌ها و خطاهای اخیر را نشان می‌دهد؛ برای جزئیات کامل با `start -v` اجرا کنید |
 | هنوز بعضی متن‌ها چینی است | برای چند متن کم‌کاربرد طبیعی است. بخش ۹ را ببینید |
 | بعد از ویرایش ترجمه‌ها تغییری دیده نمی‌شود | صفحه را رفرش کنید (مک: Cmd+Shift+R، ویندوز: Ctrl+F5) |
 | ویندوز: `python3` شناخته نمی‌شود | به جای `python3` از `py` استفاده کنید |

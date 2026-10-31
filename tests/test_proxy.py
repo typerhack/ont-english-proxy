@@ -187,6 +187,9 @@ class LifecycleTests(unittest.TestCase):
         return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
 
     def test_lifecycle(self):
+        r = self.cli("logs")
+        self.assertIn("no logs yet", r.stdout)
+
         r = self.cli("status")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("not running", r.stdout)
@@ -207,6 +210,13 @@ class LifecycleTests(unittest.TestCase):
         conn.request("GET", "/index.asp")
         self.assertIn("curLanguage = 'english'", conn.getresponse().read().decode("utf-8"))
         conn.close()
+
+        r = self.cli("logs", "-n", "5")
+        self.assertIn("GET /index.asp", r.stdout)               # request was logged
+
+        r = self.cli("run")                                       # foreground while running: friendly
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("already running", r.stdout)
 
         r = self.cli("stop")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
