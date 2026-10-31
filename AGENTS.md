@@ -11,7 +11,7 @@ requests to the modem (default `192.168.100.1`) and rewrites only what the brows
 
 | File | Purpose |
 |---|---|
-| `ont_english_proxy.py` | The whole proxy: one file, Python standard library only |
+| `ont_english_proxy.py` | The whole proxy: one file, Python standard library only. Commands: `run` (default), `start`, `stop`, `status`, `logs` |
 | `translations.json` | `menu` (exact menu names), `replace` (text anywhere), `dictionaries` (missing dictionary keys) |
 | `tests/test_proxy.py` | Offline unit tests with synthetic data, no modem needed |
 | `tools/privacy_check.py` | Blocks commits that contain personal or device-identifying data |
@@ -95,6 +95,8 @@ The proxy itself must keep passing cookies, tokens and request bodies through **
 python3 -m unittest discover -s tests      # offline tests, no modem needed
 python3 tools/privacy_check.py             # must pass before committing
 python3 ont_english_proxy.py --open        # manual check against a real modem (if you have one)
+python3 ont_english_proxy.py start -v      # or in the background with full logs ...
+python3 ont_english_proxy.py logs -f       # ... and watch them; stop with: stop
 ```
 
 Turn off browser auto-translate when checking the UI manually.
