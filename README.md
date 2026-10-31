@@ -115,26 +115,41 @@ On the GitHub page click **Code → Download ZIP**, unzip it, and open a termina
 
 > Tip: turn off your browser's automatic translation for this page, so you see the real result.
 
-### Run it in the background (optional)
+### Run it in the background (recommended for daily use)
 
-| OS | Start | Stop |
+| Command | What it does |
+|---|---|
+| `python3 ont_english_proxy.py start` | Starts in the background and opens the browser (add `--no-open` to skip) |
+| `python3 ont_english_proxy.py status` | Shows whether it's running, its address and log file |
+| `python3 ont_english_proxy.py stop` | Stops it |
+
+On Windows use `py` instead of `python3`. Running `start` twice is safe; it won't start a second copy.
+The background log is in `~/.ont-english-proxy/proxy.log`.
+
+### Shortcut: one command from anywhere (optional)
+
+Create an `ont-en` command, using the real path of your `ont-english-proxy` folder:
+
+| Shell | Add this line to | Line |
 |---|---|---|
-| macOS / Linux | `nohup python3 ont_english_proxy.py > proxy.log 2>&1 &` | `pkill -f ont_english_proxy.py` |
-| Windows | `start "" pyw ont_english_proxy.py` | Task Manager → end `pythonw.exe` |
+| macOS (zsh) | `~/.zshrc` | `alias ont-en='python3 /path/to/ont-english-proxy/ont_english_proxy.py'` |
+| Linux (bash) | `~/.bashrc` | `alias ont-en='python3 /path/to/ont-english-proxy/ont_english_proxy.py'` |
+| Windows PowerShell | `$PROFILE` (run `notepad $PROFILE`) | `function ont-en { py C:\path\to\ont-english-proxy\ont_english_proxy.py @args }` |
 
-### Shortcut (optional, macOS / Linux)
-
-Add this line to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), with your real folder path, then open a new terminal:
+Open a new terminal, then from any folder:
 
 ```
-alias ont-en='python3 /path/to/ont-english-proxy/ont_english_proxy.py --open'
+ont-en start      # background + browser
+ont-en status
+ont-en stop
+ont-en --open     # foreground instead; Ctrl+C stops
 ```
-
-Now just type `ont-en`.
 
 ## 5. Stop it
 
-Press **Ctrl+C** in the terminal window where it runs (or use the *Stop* command above for background mode).
+- Started with `start`: run `python3 ont_english_proxy.py stop` (or `ont-en stop`).
+- Started in the foreground: press **Ctrl+C** in its terminal window.
+
 Then use the modem directly again at `http://192.168.100.1` if you like.
 
 ## 6. Update to the latest version
@@ -146,13 +161,17 @@ Then use the modem directly again at `http://192.168.100.1` if you like.
 ## 7. Options
 
 ```
-python3 ont_english_proxy.py [options]
+python3 ont_english_proxy.py [run|start|stop|status] [options]
+
+run                  foreground (default); Ctrl+C stops
+start | stop | status  background control
 
 --port 8181          local port (pick another if 8181 is taken, e.g. --port 9000)
 --upstream HOST[:P]  modem address (default 192.168.100.1)
 --listen 127.0.0.1   listen address; keep it local (see Privacy and security)
 --translations FILE  use a different translations file
---open               open the browser automatically
+--open               run: open the browser automatically
+--no-open            start: don't open the browser
 -v, --verbose        log full request lines (may include tokens in URLs; don't share these logs)
 ```
 
@@ -162,7 +181,7 @@ Example for a modem at a different address: `python3 ont_english_proxy.py --upst
 
 | Problem | Fix |
 |---|---|
-| `cannot listen on 127.0.0.1:8181 … already in use` | It's already running (stop it first), or use `--port 9000` |
+| `cannot listen on 127.0.0.1:8181 … already in use` | It's already running: check with `status`, stop with `stop`. Or use `--port 9000` |
 | `modem unreachable` in the browser | Check that `http://192.168.100.1` opens directly; use `--upstream` if your modem has another address |
 | Login page loads, but login fails or bounces back | Log out of the modem in every other tab/device, wait a minute, try again (one admin session only) |
 | Still some Chinese text | Normal for a few rare labels. See [Fixing remaining Chinese text](#9-fixing-remaining-chinese-text) |

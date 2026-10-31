@@ -114,16 +114,45 @@ cd ont-english-proxy
 
 > نکته: ترجمهٔ خودکار مرورگر (Google Translate) را برای این صفحه خاموش کنید تا نتیجهٔ واقعی را ببینید.
 
-### اجرا در پس‌زمینه (اختیاری)
+### اجرا در پس‌زمینه (پیشنهادی برای استفادهٔ روزانه)
 
-| سیستم‌عامل | شروع | توقف |
+| دستور | کاری که انجام می‌دهد |
+|---|---|
+| `python3 ont_english_proxy.py start` | برنامه را در پس‌زمینه اجرا می‌کند و مرورگر را باز می‌کند (برای باز نشدن مرورگر: `--no-open`) |
+| `python3 ont_english_proxy.py status` | نشان می‌دهد برنامه در حال اجراست یا نه، و آدرس و فایل لاگ آن |
+| `python3 ont_english_proxy.py stop` | برنامه را متوقف می‌کند |
+
+در ویندوز به جای `python3` از `py` استفاده کنید. اجرای دوبارهٔ `start` مشکلی ایجاد نمی‌کند و نسخهٔ دوم اجرا نمی‌شود.
+لاگ حالت پس‌زمینه در `~/.ont-english-proxy/proxy.log` ذخیره می‌شود.
+
+### میانبر: یک دستور از هر پوشه‌ای (اختیاری)
+
+برای ساختن دستور `ont-en`، خط زیر را با مسیر واقعی پوشهٔ برنامه اضافه کنید:
+
+| ترمینال | به این فایل اضافه کنید | خط |
 |---|---|---|
-| مک / لینوکس | `nohup python3 ont_english_proxy.py > proxy.log 2>&1 &` | `pkill -f ont_english_proxy.py` |
-| ویندوز | `start "" pyw ont_english_proxy.py` | در Task Manager، `pythonw.exe` را ببندید |
+| مک (zsh) | `~/.zshrc` | `alias ont-en='python3 /path/to/ont-english-proxy/ont_english_proxy.py'` |
+| لینوکس (bash) | `~/.bashrc` | `alias ont-en='python3 /path/to/ont-english-proxy/ont_english_proxy.py'` |
+| ویندوز PowerShell | `$PROFILE` (با دستور `notepad $PROFILE`) | `function ont-en { py C:\path\to\ont-english-proxy\ont_english_proxy.py @args }` |
+
+یک ترمینال جدید باز کنید؛ از این به بعد در هر پوشه‌ای:
+
+</div>
+
+```
+ont-en start      # background + browser
+ont-en status
+ont-en stop
+ont-en --open     # foreground instead; Ctrl+C stops
+```
+
+<div dir="rtl">
 
 ## ۵. توقف
 
-در پنجرهٔ ترمینالی که برنامه در آن اجرا شده، کلیدهای **Ctrl+C** را بزنید.
+- اگر با `start` اجرا کرده‌اید: دستور `python3 ont_english_proxy.py stop` (یا `ont-en stop`) را بزنید.
+- اگر در پیش‌زمینه اجرا کرده‌اید: در پنجرهٔ ترمینال آن کلیدهای **Ctrl+C** را بزنید.
+
 بعد از آن می‌توانید مثل قبل مستقیم از `http://192.168.100.1` استفاده کنید.
 
 ## ۶. به‌روزرسانی
@@ -136,13 +165,17 @@ cd ont-english-proxy
 </div>
 
 ```
-python3 ont_english_proxy.py [options]
+python3 ont_english_proxy.py [run|start|stop|status] [options]
+
+run                  foreground (default); Ctrl+C stops
+start | stop | status  background control
 
 --port 8181          local port (e.g. --port 9000 if 8181 is busy)
 --upstream HOST[:P]  modem address (default 192.168.100.1)
 --listen 127.0.0.1   listen address; keep it local
 --translations FILE  use a different translations file
---open               open the browser automatically
+--open               run: open the browser automatically
+--no-open            start: don't open the browser
 -v, --verbose        log full request lines (don't share these logs)
 ```
 
@@ -154,7 +187,7 @@ python3 ont_english_proxy.py [options]
 
 | مشکل | راه‌حل |
 |---|---|
-| خطای `cannot listen on 127.0.0.1:8181 … already in use` | برنامه از قبل در حال اجراست (اول آن را ببندید) یا از `--port 9000` استفاده کنید |
+| خطای `cannot listen on 127.0.0.1:8181 … already in use` | برنامه از قبل در حال اجراست: با `status` بررسی و با `stop` متوقف کنید، یا از `--port 9000` استفاده کنید |
 | پیام `modem unreachable` در مرورگر | بررسی کنید `http://192.168.100.1` مستقیم باز می‌شود؛ اگر آدرس مودم فرق دارد از `--upstream` استفاده کنید |
 | صفحهٔ ورود باز می‌شود ولی ورود انجام نمی‌شود | از مودم در همهٔ تب‌ها و دستگاه‌های دیگر خارج شوید، یک دقیقه صبر کنید و دوباره امتحان کنید |
 | هنوز بعضی متن‌ها چینی است | برای چند متن کم‌کاربرد طبیعی است. بخش ۹ را ببینید |

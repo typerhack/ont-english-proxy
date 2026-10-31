@@ -4,7 +4,10 @@ ont-english-proxy — serve a Huawei ONT web UI (China firmware) in English.
 
 A small reverse proxy on localhost. Standard library only, no dependencies.
 
-    python3 ont_english_proxy.py            # then open http://127.0.0.1:8181
+    python3 ont_english_proxy.py --open     # foreground, Ctrl+C stops; http://127.0.0.1:8181
+    python3 ont_english_proxy.py start      # background (opens the browser)
+    python3 ont_english_proxy.py status
+    python3 ont_english_proxy.py stop
     python3 ont_english_proxy.py --port 9000 --upstream 192.168.100.1
 
 What it does:
@@ -26,10 +29,15 @@ import http.server
 import json
 import os
 import re
+import signal
+import subprocess
 import sys
 import threading
+import time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))
+VERSION = "1.1.0"
+STATUS_PATH = "/__ont-english-proxy__/status"  # answered locally, never forwarded
 
 HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -170,7 +178,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         finally:
             conn.close()
 
+    def _send_local(self, status, text, ctype="text/plain; charset=utf-8"):
+        msg = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(msg)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(msg)
+
     def _handle(self):
+        if self.path == STATUS_PATH and self.command == "GET":
+            # Answered by the proxy itself (never reaches the modem): used by `status` / `stop`.
+            info = {"app": "ont-english-proxy", "version": VERSION, "pid": os.getpid(),
+                    "upstream": self._upstream_origin()}
+            self._send_local(200, json.dumps(info), "application/json")
+            return
         Config.reload_translations()
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
@@ -178,12 +202,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             status, reason, headers, data = self._fetch(self.command, up_path, body)
         except OSError as e:
-            msg = f"ont-english-proxy: modem unreachable ({e})".encode()
-            self.send_response(502)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(msg)))
-            self.end_headers()
-            self.wfile.write(msg)
+            self._send_local(502, f"ont-english-proxy: modem unreachable ({e})")
             return
 
         ctype = next((v for k, v in headers if k.lower() == "content-type"), "").lower()
@@ -252,23 +271,89 @@ def rewrite_path_in_url(url: str) -> str:
     return m.group(1) + rewrite_path(m.group(2) or "/")
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Serve a Huawei ONT web UI in English (local reverse proxy).")
-    ap.add_argument("--listen", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
-    ap.add_argument("--port", type=int, default=8181, help="port to listen on (default 8181)")
-    ap.add_argument("--upstream", default="192.168.100.1", help="modem host[:port] (default 192.168.100.1)")
-    ap.add_argument("--translations", default=Config.translations_path, help="path to translations.json")
-    ap.add_argument("-v", "--verbose", action="store_true", help="log full request lines")
-    ap.add_argument("--open", action="store_true", help="open the proxied UI in the default browser")
-    a = ap.parse_args()
+# ---- start / stop / status -------------------------------------------------
+# State lives in ~/.ont-english-proxy/ (override with ONT_ENGLISH_PROXY_HOME): state.json + proxy.log.
 
-    # Windows consoles may not encode every character; never crash on logging. Flush per line.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="replace", line_buffering=True)
-        except (AttributeError, ValueError):
-            pass
+def state_dir():
+    return os.environ.get("ONT_ENGLISH_PROXY_HOME") or os.path.join(os.path.expanduser("~"), ".ont-english-proxy")
 
+
+def _state_path():
+    return os.path.join(state_dir(), "state.json")
+
+
+def log_path():
+    return os.path.join(state_dir(), "proxy.log")
+
+
+def read_state():
+    try:
+        with open(_state_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def write_state(state):
+    os.makedirs(state_dir(), exist_ok=True)
+    tmp = _state_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+    os.replace(tmp, _state_path())
+
+
+def remove_state(only_pid=None):
+    st = read_state()
+    if st is None or (only_pid is not None and st.get("pid") != only_pid):
+        return
+    try:
+        os.remove(_state_path())
+    except OSError:
+        pass
+
+
+def probe(host, port, timeout=1.0):
+    """Ask a running proxy who it is (handled locally, never forwarded to the modem)."""
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        conn.request("GET", STATUS_PATH)
+        resp = conn.getresponse()
+        data = resp.read()
+        conn.close()
+        if resp.status == 200:
+            info = json.loads(data.decode("utf-8"))
+            if info.get("app") == "ont-english-proxy":
+                return info
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _local_host(listen):
+    return "127.0.0.1" if listen in ("0.0.0.0", "", "::") else listen
+
+
+def find_running(a):
+    """Running instance from the state file, else one on the requested port. None if not running."""
+    st = read_state()
+    if st:
+        info = probe(st["host"], st["port"])
+        if info and info.get("pid") == st.get("pid"):
+            return dict(st, **info)
+        remove_state()  # stale
+    host = _local_host(a.listen)
+    info = probe(host, a.port)
+    if info:
+        return dict(info, host=host, port=a.port, url=f"http://{host}:{a.port}")
+    return None
+
+
+def _open_browser(url):
+    import webbrowser
+    webbrowser.open(url)
+
+
+def cmd_run(a):
     host, _, port = a.upstream.partition(":")
     Config.upstream_host, Config.upstream_port = host, int(port or 80)
     Config.translations_path = a.translations
@@ -278,19 +363,142 @@ def main():
     try:
         srv = http.server.ThreadingHTTPServer((a.listen, a.port), Handler)
     except OSError as e:
-        sys.exit(f"[ont-english-proxy] cannot listen on {a.listen}:{a.port} ({e}). "
-                 f"Is it already running? Try another port: --port 9000")
+        print(f"[ont-english-proxy] cannot listen on {a.listen}:{a.port} ({e}). "
+              f"Is it already running? Check with: status   (or use another port: --port 9000)", file=sys.stderr)
+        return 1
     srv.daemon_threads = True
-    url = f"http://{'127.0.0.1' if a.listen in ('0.0.0.0', '') else a.listen}:{a.port}"
+    url = f"http://{_local_host(a.listen)}:{a.port}"
+    write_state({"pid": os.getpid(), "host": _local_host(a.listen), "port": a.port, "url": url,
+                 "upstream": a.upstream, "log": log_path(), "started": int(time.time())})
     print(f"[ont-english-proxy] {url}  ->  http://{a.upstream}   (Ctrl+C to stop)")
     if a.open:
-        import webbrowser
-        webbrowser.open(url)
+        _open_browser(url)
+
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # `stop` -> clean exit, state removed
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        remove_state(only_pid=os.getpid())
+    return 0
+
+
+def cmd_start(a):
+    running = find_running(a)
+    if running:
+        print(f"ont-english-proxy is already running: {running['url']}  (pid {running['pid']})")
+        if not a.no_open:
+            _open_browser(running["url"])
+        return 0
+
+    os.makedirs(state_dir(), exist_ok=True)
+    mode = "wb" if os.path.exists(log_path()) and os.path.getsize(log_path()) > 1_000_000 else "ab"
+    log = open(log_path(), mode)
+    args = [sys.executable, os.path.realpath(__file__), "run", "--listen", a.listen, "--port", str(a.port),
+            "--upstream", a.upstream, "--translations", a.translations] + (["-v"] if a.verbose else [])
+    kw = {"stdin": subprocess.DEVNULL, "stdout": log, "stderr": subprocess.STDOUT, "close_fds": True,
+          "cwd": state_dir()}
+    if os.name == "nt":
+        kw["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0x8) | \
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
+    else:
+        kw["start_new_session"] = True
+    child = subprocess.Popen(args, **kw)
+    log.close()
+
+    host = _local_host(a.listen)
+    for _ in range(100):  # up to ~10 s
+        info = probe(host, a.port, timeout=0.5)
+        if info and info.get("pid") == child.pid:
+            url = f"http://{host}:{a.port}"
+            print(f"ont-english-proxy started: {url}  ->  http://{a.upstream}")
+            print(f"  commands: status | stop      log: {log_path()}")
+            if not a.no_open:
+                _open_browser(url)
+            return 0
+        if child.poll() is not None:
+            break
+        time.sleep(0.1)
+
+    print("ont-english-proxy failed to start. Last log lines:", file=sys.stderr)
+    try:
+        with open(log_path(), encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-5:]:
+                print("  " + line.rstrip(), file=sys.stderr)
+    except OSError:
+        pass
+    if child.poll() is None:
+        child.terminate()
+    return 1
+
+
+def cmd_stop(a):
+    running = find_running(a)
+    if not running:
+        print("ont-english-proxy is not running")
+        remove_state()
+        return 0
+    pid = running["pid"]
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError as e:
+        print(f"could not stop pid {pid}: {e}", file=sys.stderr)
+        return 1
+    for _ in range(50):
+        if not probe(running["host"], running["port"], timeout=0.3):
+            break
+        time.sleep(0.1)
+    else:
+        if hasattr(signal, "SIGKILL"):
+            os.kill(pid, signal.SIGKILL)
+    remove_state()
+    print(f"ont-english-proxy stopped (was {running['url']}, pid {pid})")
+    return 0
+
+
+def cmd_status(a):
+    running = find_running(a)
+    if not running:
+        print("ont-english-proxy is not running")
+        return 1
+    print(f"ont-english-proxy is running")
+    print(f"  url:      {running['url']}")
+    print(f"  modem:    {running.get('upstream')}")
+    print(f"  pid:      {running['pid']}")
+    if running.get("started"):
+        mins = int((time.time() - running["started"]) // 60)
+        print(f"  uptime:   {mins // 60}h {mins % 60}m")
+    print(f"  log:      {running.get('log') or log_path()}")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Serve a Huawei ONT web UI in English (local reverse proxy).",
+        epilog="commands: run (default, foreground; Ctrl+C stops) | start (background) | stop | status")
+    ap.add_argument("command", nargs="?", default="run", choices=["run", "start", "stop", "status"],
+                    help="what to do (default: run in the foreground)")
+    ap.add_argument("--listen", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
+    ap.add_argument("--port", type=int, default=8181, help="port to listen on (default 8181)")
+    ap.add_argument("--upstream", default="192.168.100.1", help="modem host[:port] (default 192.168.100.1)")
+    ap.add_argument("--translations", default=Config.translations_path, help="path to translations.json")
+    ap.add_argument("-v", "--verbose", action="store_true", help="log full request lines")
+    ap.add_argument("--open", action="store_true", help="run: open the proxied UI in the default browser")
+    ap.add_argument("--no-open", action="store_true", help="start: don't open the browser")
+    a = ap.parse_args()
+    a.translations = os.path.abspath(a.translations)
+
+    # Windows consoles may not encode every character; never crash on logging. Flush per line.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace", line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
+
+    return {"run": cmd_run, "start": cmd_start, "stop": cmd_stop, "status": cmd_status}[a.command](a)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

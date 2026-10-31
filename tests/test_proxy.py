@@ -160,5 +160,71 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(only_zh["k1"], "Connected")    # missing object filled from Chinese, then replaced
 
 
+class LifecycleTests(unittest.TestCase):
+    """start / status / stop as separate processes, like a user would run them."""
+
+    SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ont_english_proxy.py")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.modem = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeModem)
+        threading.Thread(target=cls.modem.serve_forever, daemon=True).start()
+        cls.home = tempfile.mkdtemp()
+        with socket_free_port() as port:
+            cls.port = port
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cli("stop")
+        cls.modem.shutdown()
+        shutil.rmtree(cls.home, ignore_errors=True)
+
+    @classmethod
+    def cli(cls, *args):
+        env = dict(os.environ, ONT_ENGLISH_PROXY_HOME=cls.home)
+        cmd = [sys.executable, cls.SCRIPT, *args, "--port", str(cls.port),
+               "--upstream", "127.0.0.1:%d" % cls.modem.server_address[1]]
+        return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+
+    def test_lifecycle(self):
+        r = self.cli("status")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("not running", r.stdout)
+
+        r = self.cli("start", "--no-open")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("started", r.stdout)
+
+        r = self.cli("start", "--no-open")                 # second start: no duplicate
+        self.assertIn("already running", r.stdout)
+
+        r = self.cli("status")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("http://127.0.0.1:%d" % self.port, r.stdout)
+
+        # the background proxy really proxies and translates
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/index.asp")
+        self.assertIn("curLanguage = 'english'", conn.getresponse().read().decode("utf-8"))
+        conn.close()
+
+        r = self.cli("stop")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("stopped", r.stdout)
+        self.assertEqual(self.cli("status").returncode, 1)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "state.json")))
+
+
+class socket_free_port:
+    def __enter__(self):
+        import socket
+        self.s = socket.socket()
+        self.s.bind(("127.0.0.1", 0))
+        return self.s.getsockname()[1]
+
+    def __exit__(self, *exc):
+        self.s.close()
+
+
 if __name__ == "__main__":
     unittest.main()
