@@ -77,8 +77,12 @@ git clone https://github.com/typerhack/ont-english-proxy.git
 cd ont-english-proxy
 ```
 
-Don't have git? macOS: `xcode-select --install` · Windows: [git-scm.com](https://git-scm.com/download/win) ·
-Linux: `sudo apt install git`
+Don't have git?
+
+- **macOS:** run `git --version` in Terminal. If git is missing, macOS offers to install it; click *Install*.
+  (That installs Apple's small command line tools, which include git, not the full Xcode app.)
+- **Windows:** download and install from [git-scm.com](https://git-scm.com/download/win).
+- **Linux:** `sudo apt install git` (Debian/Ubuntu) or `sudo dnf install git` (Fedora).
 
 **Option B: without git**
 
