@@ -1,0 +1,15 @@
+# Huawei's own web UI files (copyrighted, device-specific) — never publish
+resources/
+pages/
+
+# Private notes, device findings and secrets
+HANDOFF.md
+.cookie
+*.cookie
+FINDINGS.md
+
+# Runtime
+*.log
+__pycache__/
+*.pyc
+.DS_Store
